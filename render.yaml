@@ -1,0 +1,22 @@
+services:
+  # This defines your web service.
+  - type: web
+    name: diskwala-bot
+    # Use the "python" environment.
+    env: python
+    # This is the explicit variable for the Python version. Render MUST use this.
+    pythonVersion: "3.11"
+    
+    # Define the build and start commands.
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn telegram_diskwala_bot:app"
+    
+    # Set the plan to "free"
+    plan: free
+
+    # Define your environment variables here.
+    envVars:
+      - key: TELEGRAM_TOKEN
+        # IMPORTANT: Replace the value below with your actual token.
+        # This is okay for a private repo, but for public repos, use Render's secret management.
+        value: YOUR_TELEGRAM_BOT_TOKEN
