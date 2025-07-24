@@ -1,14 +1,12 @@
 services:
-  # This defines your web service.
   - type: web
     name: diskwala-bot
+    plan: free
     env: python
-    # This is the explicit variable for the Python version. Render MUST use this.
-    pythonVersion: "3.11"
-    
-    # Define the build and start commands.
     buildCommand: "pip install -r requirements.txt"
     startCommand: "gunicorn telegram_diskwala_bot:app"
-    
-    # Set the plan to "free"
-    plan: free
+    # The 'properties' key is what we were missing.
+    # It contains specific settings for the environment type.
+    properties:
+      # This is the correct way to specify the Python version.
+      pythonVersion: "3.11"
