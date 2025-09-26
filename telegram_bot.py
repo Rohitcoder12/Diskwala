@@ -3,12 +3,15 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import os
 
+# --- SECURELY GET SECRETS FROM RENDER'S ENVIRONMENT ---
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 YOUR_API_ENDPOINT = os.environ.get('API_ENDPOINT')
 
+# Check if the variables were set correctly on Render
 if not TELEGRAM_BOT_TOKEN or not YOUR_API_ENDPOINT:
-    raise ValueError("Bot Token or API Endpoint environment variable not set!")
+    raise ValueError("FATAL ERROR: A required environment variable (TELEGRAM_BOT_TOKEN or API_ENDPOINT) is not set!")
 
+# Function to format file size in a readable way
 def format_size(size_bytes):
     if size_bytes == 0: return "0B"
     import math
@@ -26,6 +29,7 @@ async def handle_terabox_link(update: Update, context: ContextTypes.DEFAULT_TYPE
     if 'terabox.com' in message_text or 'terabox.app' in message_text:
         processing_message = await update.message.reply_text("⏳ Processing...")
         try:
+            # The bot calls its own API server running in the same service
             api_response = requests.get(YOUR_API_ENDPOINT, params={'url': message_text}, timeout=60)
             api_response.raise_for_status()
             data = api_response.json()
