@@ -1,36 +1,54 @@
 import requests
-import json
-import re
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+import os
 
-def scrape_terabox_link(url: str) -> dict:
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-    }
-    
-    session = requests.Session()
-    session.headers.update(headers)
-    
-    try:
-        response = session.get(url, timeout=10)
-        response.raise_for_status()
-        match = re.search(r'var yukon_data = (\{.*?\});', response.text)
-        if not match: return {"success": False, "message": "Could not find page data."}
-        data = json.loads(match.group(1))
-        if not data.get('list'): return {"success": False, "message": data.get('error_msg', 'Link is invalid or expired.')}
+# --- SECURELY GET SECRETS FROM RENDER'S ENVIRONMENT ---
+TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
+YOUR_API_ENDPOINT = os.environ.get('API_ENDPOINT')
 
-        if data.get('isdir', 0) == 1:
-            files = [{"filename": item.get('server_filename'), "size": item.get('size', 0)} for item in data['list']]
-            return {"success": True, "type": "folder", "files": files, "folder_name": data.get('title', 'Unknown Folder')}
-        else:
-            file_info = data['list'][0]
-            fs_id = file_info.get('fs_id')
-            if not fs_id: return {"success": False, "message": "Could not find file ID."}
-            api_url = "https://www.terabox.com/api/filemetas"
-            params = {'app_id': '250528', 'fsid': str(fs_id), 'dlink': '1', 'web': '1'}
-            api_response = session.get(api_url, params=params)
-            api_data = api_response.json()
-            if api_data.get('errno') == 0 and 'dlink' in api_data:
-                return {"success": True, "type": "file", "filename": file_info.get('server_filename'), "size": file_info.get('size', 0), "dlink": api_data['dlink']}
-            else: return {"success": False, "message": "Failed to get direct link from API."}
-    except Exception as e: return {"success": False, "message": f"An error occurred: {e}"}
+# Check if the variables were set correctly on Render
+if not TELEGRAM_BOT_TOKEN or not YOUR_API_ENDPOINT:
+    raise ValueError("FATAL ERROR: A required environment variable (TELEGRAM_BOT_TOKEN or API_ENDPOINT) is not set!")
+
+# Function to format file size in a readable way
+def format_size(size_bytes):
+    if size_bytes == 0: return "0B"
+    import math
+    names = ("B", "KB", "MB", "GB", "TB")
+    i = int(math.floor(math.log(size_bytes, 1024)))
+    p = math.pow(1024, i)
+    s = round(size_bytes / p, 2)
+    return f"{s} {names[i]}"
+
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text('Hello! Send any Terabox link to process.')
+
+async def handle_terabox_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message_text = update.message.text
+    if 'terabox.com' in message_text or 'terabox.app' in message_text:
+        processing_message = await update.message.reply_text("⏳ Processing...")
+        try:
+            # The bot calls its own API server running in the same service
+            api_response = requests.get(YOUR_API_ENDPOINT, params={'url': message_text}, timeout=60)
+            api_response.raise_for_status()
+            data = api_response.json()
+            if data.get('success'):
+                if data['type'] == 'file':
+                    reply_message = f"✅ **File:** `{data['filename']}`\n**Size:** `{format_size(data['size'])}`\n\n**Link:**\n`{data['dlink']}`"
+                elif data['type'] == 'folder':
+                    file_list = "".join([f"- `{f['filename']}` ({format_size(f['size'])})\n" for f in data['files'][:20]])
+                    reply_message = f"📁 **Folder:** `{data['folder_name']}`\n\nFiles inside:\n{file_list}\n*Folder downloads not supported.*"
+            else: reply_message = f"❌ **Error:** {data.get('message', 'Unknown error.')}"
+        except Exception as e: reply_message = f"❌ Error connecting to API: {e}"
+        await processing_message.edit_text(reply_message, parse_mode='Markdown')
+
+def main() -> None:
+    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_terabox_link))
+    print("Bot is running...")
+    application.run_polling()
+
+if __name__ == '__main__':
+    main()
